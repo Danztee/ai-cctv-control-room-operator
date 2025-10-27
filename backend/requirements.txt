@@ -1,0 +1,10 @@
+devtools
+fastapi
+google-generativeai
+opencv-python
+Pillow
+psycopg2-binary
+pydantic
+python-dotenv
+sqlalchemy
+uvicorn
