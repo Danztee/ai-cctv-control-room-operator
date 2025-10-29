@@ -54,15 +54,14 @@ def _validate_config(config: Dict[str, Any]) -> None:
 def _video_processing_worker(config: Dict[str, Any], stop_event: threading.Event):
     """Background worker for video processing."""
     logger.info("Video processing worker started.")
-    try:
-        detector = VideoEventDetector(
-            model=config["model"],
-            api_key=settings.GOOGLE_API_KEY or "",
-            output_queue=event_detection_queue,
-        )
-    except Exception as e:
-        logger.error(f"Failed to initialize VideoEventDetector: {e}")
-        return
+    detector: Optional[VideoEventDetector] = None
+ 
+    detector = VideoEventDetector(
+        model=config["model"],
+        api_key=settings.GOOGLE_API_KEY or "",
+        output_queue=event_detection_queue,
+    )
+      
 
     context = config.get("context", "")
     events = config.get("events", [])
@@ -71,7 +70,11 @@ def _video_processing_worker(config: Dict[str, Any], stop_event: threading.Event
         try:
             video_path = video_chunk_queue.get(timeout=1)
             logger.info(f"Processing video chunk: {video_path}")
-            detector.detect_events(video_path=video_path, events=events, context=context)
+            if detector is not None:
+                detector.detect_events(video_path=video_path, events=events, context=context)
+            else:
+                # Skip AI detection; still mark task done
+                pass
             video_chunk_queue.task_done()
         except queue.Empty:
             continue

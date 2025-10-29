@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   getEvents,
   EventLog,
   getVideoUrl,
   stopMonitoring,
   getStatus,
+  API_BASE_URL,
 } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -41,15 +42,16 @@ export default function LiveMonitoringPage() {
   const [stopLoading, setStopLoading] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<EventLog | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [streamUrl, setStreamUrl] = useState<string>("");
+  const [streamUrl, setStreamUrl] = useState<string | undefined>(undefined);
 
-  const fetchStatus = async () => {
+  const fetchStatus = useCallback(async () => {
     try {
       const status = await getStatus();
       setServiceActive(status.service_active);
-      if (status.stream_url) {
-        setStreamUrl(status.stream_url);
-      }
+
+      console.log(status, "status....");
+      setStreamUrl((status as unknown as { stream_url?: string }).stream_url);
+      // stream_url kept on backend; no frontend fallback usage
       if (!status.service_active) {
         // If service stopped, redirect to home
         router.push("/");
@@ -57,9 +59,9 @@ export default function LiveMonitoringPage() {
     } catch (err) {
       console.error(err);
     }
-  };
+  }, [router]);
 
-  const fetchEvents = async () => {
+  const fetchEvents = useCallback(async () => {
     try {
       const data = await getEvents(50); // Get most recent 50 events
       setEvents(data);
@@ -68,12 +70,12 @@ export default function LiveMonitoringPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchStatus();
     fetchEvents();
-  }, []);
+  }, [fetchStatus, fetchEvents]);
 
   useEffect(() => {
     if (!autoRefresh || !serviceActive) return;
@@ -84,7 +86,9 @@ export default function LiveMonitoringPage() {
     }, 5000); // Refresh every 5 seconds
 
     return () => clearInterval(interval);
-  }, [autoRefresh, serviceActive]);
+  }, [autoRefresh, serviceActive, fetchEvents, fetchStatus]);
+
+  // WebRTC removed: using direct MJPEG stream via <img>
 
   const handleStop = async () => {
     setStopLoading(true);
@@ -149,6 +153,10 @@ export default function LiveMonitoringPage() {
                 <p className="text-sm text-muted-foreground mt-1">
                   Real-time event detection and monitoring
                 </p>
+                <div className="mt-2 text-xs text-muted-foreground">
+                  <span className="mr-3">API: {API_BASE_URL || "(unset)"}</span>
+                  <span>Service: {serviceActive ? "active" : "inactive"}</span>
+                </div>
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -215,10 +223,11 @@ export default function LiveMonitoringPage() {
                     Your browser does not support the video tag.
                   </video>
                 ) : streamUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
+                  // MJPEG/HTTP fallback when WebRTC is unavailable
                   <img
+                    key="mjpeg"
                     src={streamUrl}
-                    alt="Live Camera Feed"
+                    alt="Live stream"
                     className="w-full h-full object-contain rounded-lg"
                   />
                 ) : (

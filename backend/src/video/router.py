@@ -1,6 +1,8 @@
 """API router for video domain."""
 import os
 from typing import Callable
+from typing import List, Tuple
+import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
@@ -21,6 +23,8 @@ from src.video.exceptions import (
 from src.config import settings
 
 router = APIRouter()
+
+# WebRTC removed
 
 
 def _get_db_write_callback() -> Callable[[dict], bool]:
@@ -121,3 +125,6 @@ async def get_video(filepath: str):
 
     filename = os.path.basename(filepath)
     return FileResponse(path=filepath, media_type="video/mp4", filename=filename)
+
+
+# WebRTC endpoint removed

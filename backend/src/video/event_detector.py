@@ -324,6 +324,7 @@ class VideoEventDetector:
             prompt_text, images = self._build_prompt(frames, events, context)
 
             # Build content for Gemini: first image + prompt, then remaining images
+            # NOTE: This path may be disabled via service configuration.
             if images:
                 response = self.client.generate_content([images[0], prompt_text] + images[1:])
             else:

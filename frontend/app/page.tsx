@@ -78,7 +78,7 @@ export default function Page() {
       // Redirect to live monitoring page after a short delay
       setTimeout(() => {
         router.push("/live");
-      }, 1500);
+      }, 500);
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : "Failed to start monitoring"

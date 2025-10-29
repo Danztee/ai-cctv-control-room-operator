@@ -16,6 +16,8 @@ class Settings:
     _backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     VIDEO_CHUNKS_DIR: str = os.path.join(_backend_dir, "video_chunks")
 
+
+
     # API
     API_TITLE: str = "Video Event Detection API"
     API_HOST: str = "127.0.0.1"
