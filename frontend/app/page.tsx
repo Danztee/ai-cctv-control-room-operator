@@ -18,12 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  AppConfig,
-  getStatus,
-  startMonitoring,
-  stopMonitoring,
-} from "@/lib/api";
+import { getStatus, startMonitoring, stopMonitoring } from "@/app/actions";
 import { Plus, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -35,7 +30,7 @@ export default function Page() {
   const [loading, setLoading] = useState(false);
 
   const [config, setConfig] = useState<AppConfig>({
-    model: "gemini-2.0-flash-exp",
+    model: "gemini-2.5-flash",
     rtsp_url: "http://192.168.1.210:8080/video",
     chunk_duration: 5,
     context:
@@ -155,14 +150,14 @@ export default function Page() {
                       <SelectValue placeholder="Select AI model" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="gemini-2.0-flash-exp">
-                        Gemini 2.0 Flash Experimental
+                      <SelectItem value="gemini-2.5-pro">
+                        Gemini 2.5 Pro
                       </SelectItem>
-                      <SelectItem value="gemini-1.5-pro">
-                        Gemini 1.5 Pro
+                      <SelectItem value="gemini-2.5-flash">
+                        Gemini 2.5 Flash
                       </SelectItem>
-                      <SelectItem value="gemini-1.5-flash">
-                        Gemini 1.5 Flash
+                      <SelectItem value="gemini-2.5-flash-lite">
+                        Gemini 2.5 Flash Lite
                       </SelectItem>
                     </SelectContent>
                   </Select>

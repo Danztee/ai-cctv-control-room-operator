@@ -1,11 +1,11 @@
 """API router for video domain."""
 import os
-from typing import Callable
-from typing import List, Tuple
+import json
 import asyncio
+from typing import Callable
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from src.database import get_session
@@ -16,6 +16,7 @@ from src.video.schemas import (
 )
 from src.video.models import EventLog
 from src.video.service import start_service, stop_service, get_status
+from src.video.service import subscribe_to_events, unsubscribe_from_events
 from src.video.exceptions import (
     EventNotFoundError,
     InvalidVideoPathError,
@@ -97,7 +98,7 @@ async def get_events(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/events/{event_id}", response_model=EventResponseSchema)
+@router.get("/events/id/{event_id}", response_model=EventResponseSchema)
 async def get_event(
     event_id: int,
     session: Session = Depends(get_session)
@@ -115,6 +116,41 @@ async def get_event(
         "event_video_url": event.event_video_url,
         "event_detection_explanation_by_ai": event.event_detection_explanation_by_ai,
     }
+
+
+@router.get("/events/stream")
+async def stream_events():
+    """Server-Sent Events stream for real-time event updates."""
+    subscriber_queue = subscribe_to_events()
+
+    async def event_generator():
+      try:
+        while True:
+            # Block on the thread-safe queue in a worker thread
+            event = await asyncio.to_thread(subscriber_queue.get)
+            payload = {
+                "event_id": event.get("event_id"),
+                "event_timestamp": (
+                    event.get("event_timestamp").isoformat()
+                    if hasattr(event.get("event_timestamp"), "isoformat")
+                    else event.get("event_timestamp")
+                ),
+                "event_code": event.get("event_code"),
+                "event_description": event.get("event_description"),
+                "event_video_url": event.get("event_video_url"),
+                "event_detection_explanation_by_ai": event.get(
+                    "event_detection_explanation_by_ai", ""
+                ),
+            }
+            data = json.dumps(payload)
+            yield f"data: {data}\n\n"
+      except asyncio.CancelledError:
+        # Client disconnected
+        pass
+      finally:
+        unsubscribe_from_events(subscriber_queue)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @router.get("/video")

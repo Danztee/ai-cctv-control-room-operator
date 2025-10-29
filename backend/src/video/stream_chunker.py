@@ -9,7 +9,9 @@ from typing import Optional
 import cv2
 
 logger = logging.getLogger(__name__)
-DEFAULT_FOURCC = "mp4v"  # Good compatibility
+# Prefer H.264 for widest browser compatibility (Chrome, Safari, Firefox)
+# Note: This requires FFmpeg with H.264 encoder available to OpenCV.
+DEFAULT_FOURCC = "H264"
 DEFAULT_CONTAINER = "mp4"
 
 

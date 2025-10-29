@@ -1,9 +1,8 @@
 """Business logic for video processing service."""
 import logging
-import os
 import queue
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from src.config import settings
@@ -25,6 +24,9 @@ service_active = False
 threads: List[threading.Thread] = []
 current_config: Optional[Dict[str, Any]] = None
 shutdown_event = threading.Event()
+
+# SSE subscribers: each client connection gets its own thread-safe Queue
+_sse_subscribers: List[queue.Queue] = []
 
 
 def _ensure_queues():
@@ -54,14 +56,12 @@ def _validate_config(config: Dict[str, Any]) -> None:
 def _video_processing_worker(config: Dict[str, Any], stop_event: threading.Event):
     """Background worker for video processing."""
     logger.info("Video processing worker started.")
-    detector: Optional[VideoEventDetector] = None
- 
+
     detector = VideoEventDetector(
         model=config["model"],
         api_key=settings.GOOGLE_API_KEY or "",
         output_queue=event_detection_queue,
     )
-      
 
     context = config.get("context", "")
     events = config.get("events", [])
@@ -70,11 +70,7 @@ def _video_processing_worker(config: Dict[str, Any], stop_event: threading.Event
         try:
             video_path = video_chunk_queue.get(timeout=1)
             logger.info(f"Processing video chunk: {video_path}")
-            if detector is not None:
-                detector.detect_events(video_path=video_path, events=events, context=context)
-            else:
-                # Skip AI detection; still mark task done
-                pass
+            detector.detect_events(video_path=video_path, events=events, context=context)
             video_chunk_queue.task_done()
         except queue.Empty:
             continue
@@ -95,8 +91,16 @@ def _event_collection_worker(stop_event: threading.Event, db_callback):
             logger.info(f"Received event data: {result.get('event_code')}")
 
             try:
+                event_timestamp_value = result.get("event_timestamp")
+                # Normalize event_timestamp to timezone-aware UTC
+                if isinstance(event_timestamp_value, datetime):
+                    if event_timestamp_value.tzinfo is None:
+                        event_timestamp_value = event_timestamp_value.replace(tzinfo=timezone.utc)
+                else:
+                    event_timestamp_value = datetime.now(timezone.utc)
+
                 event_data = {
-                    "event_timestamp": result.get("event_timestamp", datetime.now()),
+                    "event_timestamp": event_timestamp_value,
                     "event_code": result.get("event_code", "unknown-code"),
                     "event_description": result.get(
                         "event_description", "Unknown event description"
@@ -109,6 +113,12 @@ def _event_collection_worker(stop_event: threading.Event, db_callback):
 
                 db_callback(event_data)
                 logger.info("Event written to database.")
+
+                # Broadcast to SSE subscribers
+                try:
+                    _publish_event_to_sse(event_data)
+                except Exception as e:
+                    logger.exception(f"Error broadcasting event to SSE: {e}")
 
             except Exception as e:
                 logger.exception(f"Error processing event: {e}")
@@ -224,4 +234,31 @@ def get_status() -> Dict[str, Any]:
         response["stream_url"] = current_config.get("rtsp_url", "")
 
     return response
+
+
+def subscribe_to_events() -> queue.Queue:
+    """Register an SSE subscriber and return its queue."""
+    queue_for_client: queue.Queue = queue.Queue(maxsize=1000)
+    _sse_subscribers.append(queue_for_client)
+    return queue_for_client
+
+
+def unsubscribe_from_events(queue_for_client: queue.Queue) -> None:
+    """Remove an SSE subscriber and drain its queue."""
+    try:
+        _sse_subscribers.remove(queue_for_client)
+    except ValueError:
+        pass
+
+
+def _publish_event_to_sse(event_data: Dict[str, Any]) -> None:
+    """Publish event data to all SSE subscribers without blocking."""
+    if not _sse_subscribers:
+        return
+    for subscriber_queue in list(_sse_subscribers):
+        try:
+            subscriber_queue.put_nowait(event_data)
+        except queue.Full:
+            # If a subscriber is too slow, drop the message for that subscriber
+            continue
 

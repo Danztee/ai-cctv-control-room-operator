@@ -1,12 +1,11 @@
 """Video event detector using Google Gemini AI."""
-import base64
 import json
 import logging
 import os
 import queue
 import random
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 import cv2
 import numpy as np

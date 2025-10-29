@@ -1,42 +1,7 @@
-export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ||
-  (typeof window !== "undefined"
-    ? `${window.location.protocol}//${window.location.hostname}:8000`
-    : "");
+"use server";
 
-export interface EventConfig {
-  event_code: string;
-  event_description: string;
-  detection_guidelines: string;
-}
+import { API_BASE_URL } from "@/constants";
 
-export interface AppConfig {
-  model: string;
-  rtsp_url: string;
-  chunk_duration: number;
-  context: string;
-  events: EventConfig[];
-}
-
-export interface EventLog {
-  event_id: number;
-  event_timestamp: string;
-  event_code: string;
-  event_description: string;
-  event_video_url: string;
-  event_detection_explanation_by_ai: string;
-}
-
-export interface ServiceStatus {
-  service_active: boolean;
-  queue_info: {
-    video_chunks_queue_size: number;
-    event_detection_queue_size: number;
-  };
-  stream_url?: string;
-}
-
-// API Functions
 export async function startMonitoring(
   config: AppConfig
 ): Promise<{ status: string }> {
@@ -71,11 +36,15 @@ export async function getEvents(limit: number = 100): Promise<EventLog[]> {
 }
 
 export async function getEvent(eventId: number): Promise<EventLog> {
-  const response = await fetch(`${API_BASE_URL}/events/${eventId}`);
+  const response = await fetch(`${API_BASE_URL}/events/id/${eventId}`);
   if (!response.ok) throw new Error("Failed to get event");
   return response.json();
 }
 
-export function getVideoUrl(filepath: string): string {
-  return `${API_BASE_URL}/video?filepath=${encodeURIComponent(filepath)}`;
+export async function getVideoUrl(filepath: string): Promise<string> {
+  const response = await fetch(
+    `${API_BASE_URL}/video?filepath=${encodeURIComponent(filepath)}`
+  );
+  if (!response.ok) throw new Error("Failed to get video URL");
+  return response.json();
 }

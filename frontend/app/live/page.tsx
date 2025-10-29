@@ -1,25 +1,18 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   getEvents,
-  EventLog,
   getVideoUrl,
   stopMonitoring,
   getStatus,
-  API_BASE_URL,
-} from "@/lib/api";
+} from "@/app/actions";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { CardDescription } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
@@ -33,6 +26,7 @@ import {
   Video,
   Inbox,
 } from "lucide-react";
+import { API_BASE_URL } from "@/constants";
 
 export default function LiveMonitoringPage() {
   const router = useRouter();
@@ -43,27 +37,29 @@ export default function LiveMonitoringPage() {
   const [selectedEvent, setSelectedEvent] = useState<EventLog | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [streamUrl, setStreamUrl] = useState<string | undefined>(undefined);
+  const [videoSrc, setVideoSrc] = useState<string | undefined>(undefined);
+  const [videoError, setVideoError] = useState<string | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
 
   const fetchStatus = useCallback(async () => {
     try {
       const status = await getStatus();
       setServiceActive(status.service_active);
-
-      console.log(status, "status....");
       setStreamUrl((status as unknown as { stream_url?: string }).stream_url);
-      // stream_url kept on backend; no frontend fallback usage
+
       if (!status.service_active) {
-        // If service stopped, redirect to home
-        router.push("/");
+        // router.push("/");
       }
     } catch (err) {
       console.error(err);
     }
-  }, [router]);
+  }, []);
 
   const fetchEvents = useCallback(async () => {
     try {
-      const data = await getEvents(50); // Get most recent 50 events
+      const data = await getEvents(50);
+
+      console.log(data);
       setEvents(data);
     } catch (err) {
       console.error(err);
@@ -78,17 +74,69 @@ export default function LiveMonitoringPage() {
   }, [fetchStatus, fetchEvents]);
 
   useEffect(() => {
-    if (!autoRefresh || !serviceActive) return;
+    let isCancelled = false;
+    const run = async () => {
+      if (selectedEvent?.event_video_url) {
+        try {
+          const src = await getVideoUrl(selectedEvent.event_video_url);
+          if (!isCancelled) {
+            setVideoSrc(src);
+            setVideoError(null);
+          }
+        } catch {
+          if (!isCancelled) {
+            setVideoError("Failed to load video. Check the URL and server.");
+            setVideoSrc(undefined);
+          }
+        }
+      } else {
+        setVideoSrc(undefined);
+        setVideoError(null);
+      }
+    };
+    run();
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedEvent]);
 
-    const interval = setInterval(() => {
-      fetchEvents();
-      fetchStatus();
-    }, 5000); // Refresh every 5 seconds
+  useEffect(() => {
+    if (!autoRefresh || !serviceActive) {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+      return;
+    }
 
-    return () => clearInterval(interval);
-  }, [autoRefresh, serviceActive, fetchEvents, fetchStatus]);
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
 
-  // WebRTC removed: using direct MJPEG stream via <img>
+    const es = new EventSource(`${API_BASE_URL}/events/stream`);
+    eventSourceRef.current = es;
+
+    es.onmessage = (e: MessageEvent) => {
+      try {
+        const incoming = JSON.parse(e.data) as EventLog;
+        setEvents((prev) => {
+          const exists = prev.some((p) => p.event_id === incoming.event_id);
+          const next = exists ? prev : [incoming, ...prev];
+          return next.slice(0, 200);
+        });
+      } catch {}
+    };
+
+    es.onerror = () => {
+      console.error("Error in SSE connection");
+    };
+
+    return () => {
+      es.close();
+      eventSourceRef.current = null;
+    };
+  }, [autoRefresh, serviceActive]);
 
   const handleStop = async () => {
     setStopLoading(true);
@@ -106,124 +154,124 @@ export default function LiveMonitoringPage() {
     }
   };
 
-  const formatDate = (timestamp: string) => {
-    const date = new Date(timestamp);
-    return date.toLocaleString();
-  };
-
-  const formatTimeAgo = (timestamp: string) => {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-
-    if (seconds < 60) return "Just now";
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-    return formatDate(timestamp);
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <Card className="p-8">
+        <div className="p-8">
           <div className="flex flex-col items-center gap-4">
             <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
             <p className="text-muted-foreground">Loading live feed...</p>
           </div>
-        </Card>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="h-screen w-screen bg-background flex flex-col pb-4">
-      {/* Header */}
-      <Card className="rounded-none border-x-0 border-t-0 shadow-sm">
-        <CardContent className="py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-2xl font-bold">Live Monitoring</h1>
-                  <Badge className="animate-pulse gap-1 bg-green-600 hover:bg-green-600 text-white">
-                    <Radio className="h-3 w-3" />
-                    Active
-                  </Badge>
-                </div>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Real-time event detection and monitoring
-                </p>
-                <div className="mt-2 text-xs text-muted-foreground">
-                  <span className="mr-3">API: {API_BASE_URL || "(unset)"}</span>
-                  <span>Service: {serviceActive ? "active" : "inactive"}</span>
-                </div>
-              </div>
+    <div className="flex flex-col">
+      <header className="flex items-center justify-between sticky top-0 z-40 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60 border-b p-4">
+        <div className="flex items-center gap-4">
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold">Live Monitoring</h1>
+              <Badge className="animate-pulse gap-1 bg-green-600 hover:bg-green-600 text-white">
+                <Radio className="h-3 w-3" />
+                Active
+              </Badge>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2">
-                <Switch
-                  checked={autoRefresh}
-                  onCheckedChange={setAutoRefresh}
-                  id="auto-refresh"
-                />
-                <Label htmlFor="auto-refresh" className="cursor-pointer">
-                  {autoRefresh ? (
-                    <span className="flex items-center gap-1 text-sm">
-                      <Play className="h-3 w-3" /> Auto-refresh
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1 text-sm">
-                      <Pause className="h-3 w-3" /> Paused
-                    </span>
-                  )}
-                </Label>
-              </div>
-              <Button
-                onClick={handleStop}
-                disabled={stopLoading}
-                variant="destructive"
-                size="lg"
-              >
-                <StopCircle className="h-4 w-4" />
-                {stopLoading ? "Stopping..." : "Stop Monitoring"}
-              </Button>
+
+            <p className="text-sm text-muted-foreground">
+              Real-time event detection and monitoring
+            </p>
+
+            <div className="text-xs text-muted-foreground">
+              <span className="mr-3">API: {API_BASE_URL || "(unset)"}</span>
+              <span>Service: {serviceActive ? "active" : "inactive"}</span>
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={autoRefresh}
+              onCheckedChange={setAutoRefresh}
+              id="auto-refresh"
+            />
+            <Label htmlFor="auto-refresh" className="cursor-pointer">
+              {autoRefresh ? (
+                <span className="flex items-center gap-1 text-sm">
+                  <Play className="h-3 w-3" /> Auto-refresh
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-sm">
+                  <Pause className="h-3 w-3" /> Paused
+                </span>
+              )}
+            </Label>
+          </div>
+          <Button
+            onClick={handleStop}
+            disabled={stopLoading}
+            variant="destructive"
+            size="lg"
+          >
+            <StopCircle className="h-4 w-4" />
+            {stopLoading ? "Stopping..." : "Stop Monitoring"}
+          </Button>
+        </div>
+      </header>
 
-      {/* Main Content - Split Layout */}
-      <main className="flex-1 flex overflow-hidden">
-        {/* Live Feed Area - Left Side */}
-        <div className="flex-1 flex flex-col">
-          <Card className="rounded-none border-x-0 border-b-0 border-r">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Live Feed</CardTitle>
-                <Button
-                  onClick={() => fetchEvents()}
-                  variant="outline"
-                  size="sm"
-                >
-                  <RefreshCw className="h-4 w-4" />
-                  Refresh
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Video Display Area */}
+      <main className="grid grid-cols-4">
+        <aside className="col-span-3">
+          <div className="h-full flex flex-col">
+            <div className="h-20 border-b px-4 py-3 flex items-center justify-between border-r">
+              <h2 className="text-lg font-semibold">Live Feed</h2>
+
+              <Button onClick={() => fetchEvents()} variant="outline" size="sm">
+                <RefreshCw className="h-4 w-4" />
+                Refresh
+              </Button>
+            </div>
+
+            <div className="space-y-4 p-4 border-r">
               <div className="bg-black rounded-lg aspect-video flex items-center justify-center overflow-hidden">
                 {selectedEvent ? (
-                  <video
-                    src={getVideoUrl(selectedEvent.event_video_url)}
-                    controls
-                    className="w-full h-full object-contain rounded-lg"
-                    autoPlay
-                  >
-                    Your browser does not support the video tag.
-                  </video>
+                  <div className="w-full h-full">
+                    <video
+                      key={selectedEvent.event_id}
+                      src={videoSrc}
+                      controls
+                      className="w-full h-full object-contain rounded-lg"
+                      autoPlay
+                      preload="metadata"
+                      onError={() =>
+                        setVideoError(
+                          "Failed to load video. Check the URL and server."
+                        )
+                      }
+                    >
+                      Your browser does not support the video tag.
+                    </video>
+                    <div className="text-xs text-muted-foreground px-1 py-1 flex items-center gap-2">
+                      <span className="truncate">
+                        {videoSrc || "(no video URL)"}
+                      </span>
+                      {videoSrc && (
+                        <a
+                          href={videoSrc}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="underline"
+                        >
+                          Open
+                        </a>
+                      )}
+                      {videoError && (
+                        <span className="text-red-500">{videoError}</span>
+                      )}
+                    </div>
+                  </div>
                 ) : streamUrl ? (
-                  // MJPEG/HTTP fallback when WebRTC is unavailable
                   <img
                     key="mjpeg"
                     src={streamUrl}
@@ -243,45 +291,50 @@ export default function LiveMonitoringPage() {
                 )}
               </div>
 
-              {/* Event Details */}
               {selectedEvent && (
-                <Card className="bg-muted">
-                  <CardHeader className="pb-3">
+                <div className="bg-muted rounded-lg p-4">
+                  <div className="pb-3">
                     <div className="flex items-center gap-2">
                       <Badge variant="destructive" className="gap-1">
                         {selectedEvent.event_code}
                       </Badge>
                       <CardDescription>
-                        {formatTimeAgo(selectedEvent.event_timestamp)}
+                        {new Date(selectedEvent.event_timestamp).toLocaleString(
+                          undefined,
+                          {
+                            dateStyle: "short",
+                            timeStyle: "short",
+                          }
+                        )}
                       </CardDescription>
                     </div>
-                    <CardTitle className="text-lg mt-2">
+                    <h3 className="text-lg mt-2 font-semibold">
                       {selectedEvent.event_description}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
+                    </h3>
+                  </div>
+                  <div>
                     <p className="text-sm">
                       <span className="font-medium">AI Explanation:</span>{" "}
                       {selectedEvent.event_detection_explanation_by_ai}
                     </p>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
               )}
-            </CardContent>
-          </Card>
-        </div>
+            </div>
+          </div>
+        </aside>
 
-        {/* Events Sidebar - Right Side */}
-        <div className="w-96 flex flex-col overflow-hidden">
-          <Card className="rounded-none border-x-0 border-t-0 border-b-0 flex flex-col flex-1">
-            <CardHeader className="border-b">
-              <CardTitle>Detected Events</CardTitle>
-              <CardDescription>
+        <aside className="col-span-1">
+          <div className="flex flex-col flex-1">
+            <div className="h-20 border-b px-4 py-3 flex flex-col">
+              <h2 className="text-lg font-semibold">Detected Events</h2>
+
+              <p className="text-sm text-muted-foreground">
                 {events.length} event{events.length !== 1 ? "s" : ""} detected
-              </CardDescription>
-            </CardHeader>
+              </p>
+            </div>
 
-            <ScrollArea className="flex-1">
+            <ScrollArea className="flex-1 min-h-0">
               <div className="p-0">
                 {events.length === 0 ? (
                   <div className="p-6 text-center">
@@ -316,7 +369,12 @@ export default function LiveMonitoringPage() {
                                   {event.event_code}
                                 </Badge>
                                 <span className="text-xs text-muted-foreground">
-                                  {formatTimeAgo(event.event_timestamp)}
+                                  {new Date(
+                                    event.event_timestamp
+                                  ).toLocaleString(undefined, {
+                                    dateStyle: "short",
+                                    timeStyle: "short",
+                                  })}
                                 </span>
                               </div>
                               <h3 className="font-semibold text-sm mb-1 truncate">
@@ -335,8 +393,8 @@ export default function LiveMonitoringPage() {
                 )}
               </div>
             </ScrollArea>
-          </Card>
-        </div>
+          </div>
+        </aside>
       </main>
     </div>
   );
