@@ -2,7 +2,7 @@
 import os
 import json
 import asyncio
-from typing import Callable
+from typing import Callable, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
@@ -28,22 +28,23 @@ router = APIRouter()
 # WebRTC removed
 
 
-def _get_db_write_callback() -> Callable[[dict], bool]:
+def _get_db_write_callback() -> Callable[[dict], Optional[int]]:
     """Get a database write callback for the service."""
-    def write_event(event_data: dict) -> bool:
-        """Write event to database using a fresh session."""
+    def write_event(event_data: dict) -> Optional[int]:
+        """Write event to database using a fresh session. Returns event_id if successful."""
         if not settings.DATABASE_URL:
-            return False
+            return None
         
         try:
             session = next(get_session())
             event = EventLog(**event_data)
             session.add(event)
             session.commit()
-            return True
+            session.refresh(event)  # Get the auto-generated event_id
+            return event.event_id
         except Exception:
             session.rollback()
-            return False
+            return None
         finally:
             session.close()
     

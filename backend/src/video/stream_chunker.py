@@ -9,9 +9,7 @@ from typing import Optional
 import cv2
 
 logger = logging.getLogger(__name__)
-# Prefer H.264 for widest browser compatibility (Chrome, Safari, Firefox)
-# Note: This requires FFmpeg with H.264 encoder available to OpenCV.
-DEFAULT_FOURCC = "H264"
+DEFAULT_FOURCC = "avc1"
 DEFAULT_CONTAINER = "mp4"
 
 
@@ -323,37 +321,3 @@ class VideoStreamChunker:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.stop()
         self.join()
-
-
-# === Example Usage ===
-if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-    )
-
-    RTSP_URL = "rtsp://admin:password@192.168.1.100:554/stream1"
-    OUTPUT_DIR = "./chunks"
-    q = queue.Queue(maxsize=10)
-
-    chunker = VideoStreamChunker(
-        stream_url=RTSP_URL,
-        output_dir=OUTPUT_DIR,
-        chunk_duration=10,
-        output_queue=q,
-        fourcc="H264",  # or "mp4v"
-        container="mp4",
-        use_tcp=True
-    )
-
-    try:
-        with chunker:
-            logger.info("Chunker running... Press Ctrl+C to stop.")
-            while True:
-                try:
-                    chunk_path = q.get(timeout=1)
-                    logger.info(f"New chunk ready: {chunk_path}")
-                except queue.Empty:
-                    continue
-    except KeyboardInterrupt:
-        logger.info("Shutting down...")

@@ -14,6 +14,7 @@ load_dotenv()
 from src.config import settings
 from src.database import init_db
 from src.video.router import router as video_router
+from src.video.service import stop_service, service_active
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -30,6 +31,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
     # Shutdown
     logger.info("Shutting down application...")
+    try:
+        if service_active:
+            stop_service()
+    except Exception as e:
+        logger.warning(f"Error during service shutdown: {e}")
 
 
 app = FastAPI(

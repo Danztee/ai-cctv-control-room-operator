@@ -22,6 +22,7 @@ video_chunk_queue: Optional[queue.Queue] = None
 event_detection_queue: Optional[queue.Queue] = None
 service_active = False
 threads: List[threading.Thread] = []
+active_chunker: Optional[VideoStreamChunker] = None
 current_config: Optional[Dict[str, Any]] = None
 shutdown_event = threading.Event()
 
@@ -111,10 +112,14 @@ def _event_collection_worker(stop_event: threading.Event, db_callback):
                     "event_video_url": result.get("event_video_url", ""),
                 }
 
-                db_callback(event_data)
-                logger.info("Event written to database.")
+                event_id = db_callback(event_data)
+                if event_id:
+                    event_data["event_id"] = event_id
+                    logger.info(f"Event written to database with ID: {event_id}")
+                else:
+                    logger.warning("Event write to database failed or returned no ID")
 
-                # Broadcast to SSE subscribers
+                # Broadcast to SSE subscribers (including event_id if available)
                 try:
                     _publish_event_to_sse(event_data)
                 except Exception as e:
@@ -178,16 +183,16 @@ def start_service(config: Dict[str, Any], db_callback) -> Dict[str, Any]:
         daemon=True,
         name="EventCollector",
     )
-    chunker_thread = threading.Thread(
-        target=chunker.start,
-        daemon=True,
-        name="StreamChunker",
-    )
-
-    threads = [video_proc_thread, event_collect_thread, chunker_thread]
+    
+    threads = [video_proc_thread, event_collect_thread]
 
     for t in threads:
         t.start()
+
+    # Start chunker in its own internal thread and keep a reference for shutdown
+    global active_chunker
+    active_chunker = chunker
+    active_chunker.start()
 
     service_active = True
     logger.info("All services started.")
@@ -206,6 +211,17 @@ def stop_service() -> Dict[str, Any]:
     shutdown_event = threading.Event()
 
     timeout_seconds = 10
+
+    # Stop the chunker and wait for its internal thread
+    global active_chunker
+    if active_chunker is not None:
+        try:
+            active_chunker.stop()
+            active_chunker.join(timeout_seconds)
+        except Exception as e:
+            logger.warning(f"Error stopping chunker: {e}")
+        finally:
+            active_chunker = None
     for t in threads:
         if t.is_alive():
             t.join(timeout=timeout_seconds)
