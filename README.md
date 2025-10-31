@@ -19,16 +19,30 @@ ai-cctv-control-room-operator/
 
 ```bash
 # From project root
+
+# 1) Create & activate virtual environment (choose one Python)
+python3 -m venv venv        # or: python3.13 -m venv venv
 source venv/bin/activate
+
+# 2) Install backend dependencies
+python -m pip install --upgrade pip wheel
+pip install -r backend/requirements.txt
+
+# 3) Run the backend
 cd backend
 
 # Set environment variables
 export DATABASE_URL=postgresql://user:pass@localhost:5432/db
 export GOOGLE_API_KEY=your_google_api_key
 
-# Run the server
+# Start the server
 uvicorn src.main:app --reload
 ```
+
+Notes:
+
+- If you already have a `venv/` directory and want a fresh one: `rm -rf venv`
+- On macOS, if installing `psycopg2-binary` or `opencv-python` fails, install Command Line Tools: `xcode-select --install`
 
 ### Frontend Setup
 
