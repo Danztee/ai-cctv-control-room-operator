@@ -1,10 +1,11 @@
-devtools
-fastapi
-google-generativeai
-opencv-python
-Pillow
-psycopg2-binary
-pydantic
-python-dotenv
-sqlalchemy
-uvicorn
+fastapi==0.103.2
+pydantic==1.10.13
+uvicorn==0.23.2
+sqlalchemy==2.0.25
+python-dotenv==1.0.1
+psycopg2-binary==2.9.9
+opencv-python==4.8.1.78
+Pillow==10.0.1
+google-generativeai==0.5.2
+urllib3<2
+importlib-metadata>=6.8.0; python_version < "3.10"
