@@ -87,7 +87,7 @@ class InvalidVideoPathError(HTTPException):
             status_code=404,
             detail={
                 "error_code": ErrorCode.INVALID_VIDEO_PATH,
-                "message": f"Video file at path {path} not found",
+                "message": f"Video clip {path} not found",
             },
         )
 

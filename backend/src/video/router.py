@@ -154,14 +154,37 @@ async def stream_events():
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
+def _resolve_clip_path(filepath: str) -> Optional[str]:
+    """Resolve a requested clip path, allowing only files inside VIDEO_CHUNKS_DIR.
+
+    Accepts either the absolute path stored on an event or a bare filename.
+    Symlinks and '..' segments are resolved first, so nothing outside the
+    clips directory can be served.
+    """
+    clips_dir = os.path.realpath(settings.VIDEO_CHUNKS_DIR)
+    candidate = filepath if os.path.isabs(filepath) else os.path.join(clips_dir, filepath)
+    resolved = os.path.realpath(candidate)
+
+    try:
+        if os.path.commonpath([clips_dir, resolved]) != clips_dir:
+            return None
+    except ValueError:  # e.g. paths on different drives
+        return None
+
+    if resolved == clips_dir or not os.path.isfile(resolved):
+        return None
+    return resolved
+
+
 @router.get("/video")
 async def get_video(filepath: str):
-    """Get video file."""
-    if not os.path.isfile(filepath):
-        raise InvalidVideoPathError(filepath)
+    """Serve an event clip. Only files inside the clips directory are allowed."""
+    resolved = _resolve_clip_path(filepath)
+    if resolved is None:
+        raise InvalidVideoPathError(os.path.basename(filepath))
 
-    filename = os.path.basename(filepath)
-    return FileResponse(path=filepath, media_type="video/mp4", filename=filename)
+    filename = os.path.basename(resolved)
+    return FileResponse(path=resolved, media_type="video/mp4", filename=filename)
 
 
 # WebRTC endpoint removed
